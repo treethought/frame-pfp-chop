@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"bytes"
@@ -46,29 +46,7 @@ func getRegion(img image.Image, x, y float64) (x1, x2, y1, y2 int) {
 	return x1, x2, y1, y2
 }
 
-func writeWithin(base image.Image, img image.Image, scale int) image.Image {
-
-	// scale is used to scale the image
-	// we then use the scaled dimensions to write the image within the base image in the center
-
-	scaled := scaleImage(img, scale)
-
-	baseBounds := base.Bounds()
-	scaledBounds := scaled.Bounds()
-
-	x1 := (baseBounds.Max.X - scaledBounds.Max.X) / 2
-	x2 := x1 + scaledBounds.Max.X
-	y1 := (baseBounds.Max.Y - scaledBounds.Max.Y) / 2
-	y2 := y1 + scaledBounds.Max.Y
-
-	// write the scaled image within the base image
-	result := writeImageWithinRegion(base, scaled, x1, x2, y1, y2)
-
-	return result
-
-}
-
-func fetchImage(url string) (image.Image, string, error) {
+func FetchImage(url string) (image.Image, string, error) {
 	log.Println("fetching image: ", url)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -89,7 +67,7 @@ func fetchImage(url string) (image.Image, string, error) {
 	return img, format, nil
 }
 
-func loadImage(filepath string) (image.Image, string, error) {
+func LoadImage(filepath string) (image.Image, string, error) {
 	imgFile, err := os.Open(filepath)
 	if err != nil {
 		return nil, "", err
@@ -106,7 +84,7 @@ type Response struct {
 	Urls map[string]string
 }
 
-func getRandomImages(width, height int, query string, count int) ([]image.Image, string, error) {
+func GetRandomImages(width, height int, query string, count int) ([]image.Image, string, error) {
 	images := []image.Image{}
 
 	key := "EFBmjsTwzleb3SAdc_-VSS263LyE2dIs2hYscFbqdds"
@@ -194,7 +172,7 @@ func getRandomImage(width, height int, query string) (image.Image, string, error
 	return img, imgUrl, err
 }
 
-func loadRandomUnsplashImage(width, height int) (image.Image, string, error) {
+func LoadRandomUnsplashImage(width, height int) (image.Image, string, error) {
 	url := fmt.Sprintf("https://source.unsplash.com/random/%dx%d", width, height)
 	res, err := http.Get(url)
 	if err != nil {
@@ -212,7 +190,7 @@ func loadRandomUnsplashImage(width, height int) (image.Image, string, error) {
 	return img, imgUrl, err
 }
 
-func writeImage(path string, img image.Image) {
+func WriteImage(path string, img image.Image) {
 	out, err := os.Create(path)
 	if err != nil {
 		log.Fatal(err)
@@ -290,7 +268,7 @@ func createGif(out string, blend bool, imgs ...image.Image) {
 	gif.EncodeAll(f, outGif)
 }
 
-func getPalette(img image.Image) *palettor.Palette {
+func GetPalette(img image.Image) *palettor.Palette {
 	if img == nil {
 		return nil
 	}
@@ -375,7 +353,7 @@ func hashImage(img image.Image) string {
 	return fmt.Sprintf("%x", h)
 }
 
-func escapeURL(urlString string) string {
+func EscapeURL(urlString string) string {
 	u, err := url.Parse(urlString)
 	if err != nil {
 		fmt.Println("Error parsing URL:", err)
@@ -395,18 +373,4 @@ func escapeURL(urlString string) string {
 	path = strings.ReplaceAll(path, "|", "_")
 
 	return path
-}
-
-func unescapeFileName(escapedFileName string) string {
-	// Replace underscores with the original characters
-	path := strings.ReplaceAll(escapedFileName, "_", "/")
-
-	// Unescape other special characters
-	unescapedPath, err := url.PathUnescape(path)
-	if err != nil {
-		fmt.Println("Error unescaping path:", err)
-		return ""
-	}
-
-	return unescapedPath
 }

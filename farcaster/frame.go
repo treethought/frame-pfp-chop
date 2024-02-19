@@ -1,4 +1,4 @@
-package main
+package farcaster
 
 import (
 	"fmt"
@@ -56,7 +56,7 @@ type Button struct {
 }
 
 type Frame struct {
-	frameV         string
+	FrameV         string
 	Image          string
 	PostURL        string
 	Buttons        []Button
@@ -94,7 +94,7 @@ func (f *Frame) Render(w io.Writer) {
   <body>
     HOWDY
   </body>
-</html>`, f.Image, f.frameV, f.Image, f.PostURL, btns, inputTx)
+</html>`, f.Image, f.FrameV, f.Image, f.PostURL, btns, inputTx)
 	if _, err := w.Write([]byte(resp)); err != nil {
 		panic(err)
 	}
