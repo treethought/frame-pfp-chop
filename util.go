@@ -26,6 +26,46 @@ import (
 
 var client = http.Client{}
 
+// returns rectangle centered in the pixture with x and y offset percent
+// i.e if x and y are 10%, and image is 100x100, the rectangle occupy the center with:
+// x1 = 10, x2 = 90, y1 = 10, y2 = 90
+// if x and y are 20%, the rectangle will be 200x200 :
+// x1 = 40, x2 = 60, y1 = 40, y2 = 60
+func getRegion(img image.Image, x, y float64) (x1, x2, y1, y2 int) {
+	bounds := img.Bounds()
+	width, height := bounds.Max.X, bounds.Max.Y
+
+	// need to take x percent off of each side
+	x1 = int(float64(width) * float64(x/100))
+	x2 = width - x1
+
+	y1 = int(float64(height) * float64(y/100))
+	y2 = height - y1
+	return x1, x2, y1, y2
+}
+
+func writeWithin(base image.Image, img image.Image, scale int) image.Image {
+
+	// scale is used to scale the image
+	// we then use the scaled dimensions to write the image within the base image in the center
+
+	scaled := scaleImage(img, scale)
+
+	baseBounds := base.Bounds()
+	scaledBounds := scaled.Bounds()
+
+	x1 := (baseBounds.Max.X - scaledBounds.Max.X) / 2
+	x2 := x1 + scaledBounds.Max.X
+	y1 := (baseBounds.Max.Y - scaledBounds.Max.Y) / 2
+	y2 := y1 + scaledBounds.Max.Y
+
+	// write the scaled image within the base image
+	result := writeImageWithinRegion(base, scaled, x1, x2, y1, y2)
+
+	return result
+
+}
+
 func fetchImage(url string) (image.Image, string, error) {
 	log.Println("fetching image: ", url)
 	req, err := http.NewRequest(http.MethodGet, url, nil)

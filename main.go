@@ -6,6 +6,7 @@ import (
 	"image"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 
@@ -13,10 +14,13 @@ import (
 )
 
 const API_URL = "https://hub-api.neynar.com"
-// var fid = 23
-var fid uint64 = 0
 
-// const fid = 04893
+// genertae rand uint in range 1-5000
+var fid uint64 = uint64(rand.Intn(5000) + 1)
+
+// var fid uint64 = 68
+
+// const fid = 678
 
 var API_KEY = os.Getenv("API_KEY")
 
@@ -123,15 +127,14 @@ func (f *Frame) Render(w io.Writer) {
 
 func main() {
 
-	f := Frame{
+	start := Frame{
 		frameV:  "vNext",
 		Image:   "http://localhost:8080/images/cover.png",
-		PostURL: "https://frame.seaborne.cloud/generate",
+		PostURL: "https://frame.seaborne.cloud/start",
 		Buttons: []Button{
 			Button{
-				Label:  []byte("Generate"),
+				Label:  []byte("Start"),
 				Action: ActionPOST,
-				// Target: []byte("https://frame.seaborne.cloud/generate"),
 			},
 		},
 	}
@@ -147,7 +150,7 @@ func main() {
 			fmt.Println(string(d))
 		}
 		log.Println("Request received")
-		f.Render(w)
+		start.Render(w)
 	})
 
 	mux.HandleFunc("/images/", func(w http.ResponseWriter, r *http.Request) {
@@ -159,9 +162,42 @@ func main() {
 		log.Println("serving result image: ", r.URL.Path[1:])
 		http.ServeFile(w, r, r.URL.Path[1:])
 	})
+	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
+		log.Println("start request received")
+		PfpUrl, err := getUserPFP(fid)
+		if err != nil {
+			log.Println("failed to get pfp: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		frame := Frame{
+			frameV:  "vNext",
+			Image:   PfpUrl,
+			PostURL: "https://frame.seaborne.cloud/generate",
+			Buttons: []Button{
+				Button{
+					Label:  []byte("Slice and dice"),
+					Action: ActionPOST,
+				},
+				Button{
+					Label:  []byte("Shuffle"),
+					Action: ActionPOST,
+				},
+				Button{
+					Label:  []byte("Recombine"),
+					Action: ActionPOST,
+				},
+				Button{
+					Label:  []byte("Broken Mirror"),
+					Action: ActionPOST,
+				},
+			},
+		}
+
+		frame.Render(w)
+	})
 
 	mux.HandleFunc("/generate", func(w http.ResponseWriter, r *http.Request) {
-		log.Println("generating image")
 
 		var packet SignaturePacket
 		if err := json.NewDecoder(r.Body).Decode(&packet); err != nil {
@@ -174,31 +210,57 @@ func main() {
 			fid = packet.UntrustedData.FID
 		}
 
-		log.Println("fetching pfp for fid: ", fid)
-		PfpUrl, err := getUserPFP(fid)
-		if err != nil {
-			log.Println("failed to get pfp: ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		fmt.Println(PfpUrl)
+		var img image.Image
+		var err error
 
-		// get image from pfp url
-		img, _, err := fetchImage(PfpUrl)
-		if err != nil {
-			log.Println("failed to fetch image: ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+		if r.Method == "POST" && r.URL.Query().Get("session") != "" {
+			id := r.URL.Query().Get("session")
+			path := fmt.Sprintf("results/%d/%s.png", fid, id)
+			// read image from file
+			log.Println("continue session")
+			img, _, err = loadImage(path)
+			if err != nil {
+				log.Println("failed to read image: ", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		} else {
+			log.Println("fetching pfp for fid: ", fid)
+			PfpUrl, err := getUserPFP(fid)
+			if err != nil {
+				log.Println("failed to get pfp: ", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			log.Println("pfp url: ", PfpUrl)
+
+			// get image from pfp url
+			img, _, err = fetchImage(PfpUrl)
+			if err != nil {
+				log.Println("failed to fetch image: ", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			log.Println("fetched image")
 		}
 
-		// shuffle images
-		log.Println("shuffling image")
 		outDir := fmt.Sprintf("results/%d", fid)
 		if err := os.MkdirAll(outDir, 0755); err != nil {
 			log.Println("failed to create output dir: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		result := runTransform(img, outDir)
+
+		var result image.Image
+		switch packet.UntrustedData.ButtonIndex {
+		case 1:
+			result = runSliceAndDice(img, outDir)
+		case 2:
+			result = runShuffle(img, outDir)
+		case 3:
+			result = runRecombine(img, outDir)
+		default:
+			result = runTransform(img, outDir)
+		}
 
 		id := uuid.New().String()
 		out := fmt.Sprintf("%s/%s.png", outDir, id)
@@ -207,15 +269,29 @@ func main() {
 
 		imgUrl := fmt.Sprintf("https://frame.seaborne.cloud/%s", out)
 
+		postURL := fmt.Sprintf("https://frame.seaborne.cloud/generate?session=%s", id)
+
 		frame := Frame{
 			frameV:  "vNext",
 			Image:   imgUrl,
-			PostURL: imgUrl,
+			PostURL: postURL,
 			Buttons: []Button{
 				Button{
-					Label:  []byte("View"),
-					Action: ActionLink,
-					Target: []byte(imgUrl),
+					Label:  []byte("Slice and dice"),
+					Action: ActionPOST,
+					// Target: []byte("https://frame.seaborne.cloud/generate"),
+				},
+				Button{
+					Label:  []byte("Shuffle"),
+					Action: ActionPOST,
+				},
+				Button{
+					Label:  []byte("Recombine"),
+					Action: ActionPOST,
+				},
+				Button{
+					Label:  []byte("Butcher it"),
+					Action: ActionPOST,
 				},
 			},
 		}
@@ -231,45 +307,53 @@ func main() {
 
 }
 
-func shuffleCombinePfps(imgs ...image.Image) image.Image {
-	result := combineImages(imgs[0], imgs[1])
+func runSliceAndDice(img image.Image, outdir string) image.Image {
+	log.Println("running slice and dice")
+	sr, _ := shuffleImageRows(img)
+	sc, _ := shuffleImageColumns(img)
+	result := combineImages(sc, sr)
 	return result
 }
 
-// returns rectangle centered in the pixture with x and y offset
-func getRegion(img image.Image, x, y int) (x1, x2, y1, y2 int) {
-	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
-	xoffset := width - (2 * x)
-	yoffset := height - (2 * y)
-	xq := xoffset / 2
-	yq := yoffset / 2
-	return xq, xq + x, yq, yq + y
-
+func runShuffle(img image.Image, outdir string) image.Image {
+	log.Println("running shuffle")
+	for i := 0; i < 2; i++ {
+		sr, _ := shuffleImageRows(img)
+		sc, _ := shuffleImageColumns(img)
+		img = combineImages(sr, sc)
+	}
+	return img
 }
 
-func writeWithin(base image.Image, img image.Image) image.Image {
-
-	// Get dimensions of the image
-	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
-
-	// Define the region in the middle of the image
-	startX := width / 4
-	endX := width * 3 / 4
-	startY := height / 4
-	endY := height * 3 / 4
-
-	scaled := scaleImage(img, 10)
-	result := writeImageWithinRegion(base, scaled, startX, endX, startY, endY)
+func runRecombine(img image.Image, outdir string) image.Image {
+	log.Println("running recombine")
+	result := writeWithin(img, img, 80)
+	img = combineImages(img, result)
+	result = writeWithin(img, img, 60)
+	img = combineImages(img, result)
+	result = writeWithin(img, img, 40)
+	img = combineImages(img, result)
+	result = writeWithin(img, img, 20)
 	return result
-
 }
 
 func runTransform(img image.Image, outdir string) image.Image {
-	shuffled := shufflePFPGrid(img, outdir)
-	result := writeWithin(img, shuffled)
+	log.Println("runTransform")
+	// return img
+	sr, _ := shuffleImageRows(img)
+	sc, _ := shuffleImageColumns(img)
+	result := writeWithin(sc, sr, 80)
+	result = combineImages(result, sr)
+	result = writeWithin(result, sc, 60)
+	result = writeWithin(result, sr, 40)
+	result = writeWithin(result, sc, 30)
 	return result
+	bb := combineImages(sr, sc)
+	return writeWithin(bb, bb, 20)
+
+	// shufflebase := shuffleCombinePfps(img, img)
+	// result := writeWithin(img, shuffled, 50)
+	// return result
 }
 
 func shufflePFPGrid(img image.Image, outdir string) image.Image {
@@ -289,18 +373,6 @@ func shufflePFPGrid(img image.Image, outdir string) image.Image {
 
 	return result
 
-	// cid := runner.uploadResults()
-	// // fmt.Println(cid)
-	//
-	// runner.generateMeta(cid)
-	// runner.uploadMeta()
-
-	// ids := runner.writeReuslts2()
-	// cid := runner.uploadResults()
-	//
-	// runner.generateMeta(cid)
-	// runner.uploadMeta()
-	//
 }
 
 type User struct {

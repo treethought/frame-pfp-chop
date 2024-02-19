@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	draw2 "golang.org/x/image/draw"
+
 	"github.com/mccutchen/palettor"
 )
 
@@ -273,7 +275,7 @@ func shuffleImageColumns(img image.Image) (image.Image, error) {
 		col := pixelCols[i]
 		for _, px := range col {
 			pi := px.Point.X
-			if i%3 == 0 {
+			if i%2 == 0 {
 				pi = idx
 			}
 
@@ -514,53 +516,75 @@ func pointWithinRegion(px, py, x1, x2, y1, y2 int) bool {
 	return px >= x1 && px <= x2 && py >= y1 && py <= y2
 }
 
-// scale a function down by the factor
-func scaleImage(img image.Image, scale float64) image.Image {
-	bounds := img.Bounds()
-	width, height := bounds.Max.X, bounds.Max.Y
+func scaleImage(img image.Image, scale int) image.Image {
+	// Calculate new dimensions
+	width := int(float64(img.Bounds().Dx()) * float64(scale) / 100)
+	height := int(float64(img.Bounds().Dy()) * float64(scale) / 100)
 
-	newWidth := int(float64(width) * scale)
-	newHeight := int(float64(height) * scale)
+	// Create a new RGBA image with the new dimensions
+	scaled := image.NewRGBA(image.Rect(0, 0, width, height))
 
-	newMin := image.Point{0, 0}
-	newMax := image.Point{newWidth, newHeight}
+	// Scale the image
+	draw2.NearestNeighbor.Scale(scaled, scaled.Bounds(), img, img.Bounds(), draw2.Src, nil)
+	// draw.FloydSteinberg.Draw(scaled, scaled.Bounds(), img, img.Bounds().Min)
 
-	newRect := image.Rectangle{
-		Min: newMin,
-		Max: newMax,
-	}
-	finImage := image.NewRGBA(newRect)
-
-	for y := 0; y < newHeight; y++ {
-		for x := 0; x < newWidth; x++ {
-			finImage.Set(
-				x,
-				y,
-				img.At(x, y),
-			)
-		}
-	}
-	return finImage
+	return scaled
 }
 
+// scale a function down by the factor
+// func scaleImage(img image.Image, scale float64) image.Image {
+// 	bounds := img.Bounds()
+// 	width, height := bounds.Max.X, bounds.Max.Y
+//
+// 	newWidth := int(float64(width) * scale)
+// 	newHeight := int(float64(height) * scale)
+//
+// 	newMin := image.Point{0, 0}
+// 	newMax := image.Point{newWidth, newHeight}
+//
+// 	newRect := image.Rectangle{
+// 		Min: newMin,
+// 		Max: newMax,
+// 	}
+// 	finImage := image.NewRGBA(newRect)
+//
+// 	// write the image within the new bounds
+// 	// only write pixels to align with the scaled image
+// 	// for example, if the scaled image is 50% of the original, then only write every other pixel
+//
+// 	for y := 0; y < newHeight; y++ {
+// 		for x := 0; x < newWidth; x++ {
+//       include := false
+//
+//
+// 		}
+// 	}
+//
+// 	return finImage
+// }
+
 func writeImageWithinRegion(base image.Image, img image.Image, x1, x2, y1, y2 int) image.Image {
-  bounds := base.Bounds()
-  width, height := bounds.Max.X, bounds.Max.Y
+   // Get dimensions of the base image
+    baseBounds := base.Bounds()
+    baseWidth := baseBounds.Max.X
+    baseHeight := baseBounds.Max.Y
 
-  newRect := image.Rectangle{
-    Min: base.Bounds().Min,
-    Max: base.Bounds().Max,
-  }
-  finImage := image.NewRGBA(newRect)
+    // Create a new RGBA image with the same dimensions as the base image
+    finImage := image.NewRGBA(baseBounds)
 
-  for y := 0; y < height; y++ {
-    for x := 0; x < width; x++ {
-      if pointWithinRegion(x, y, x1, x2, y1, y2) {
-        finImage.Set(x, y, img.At(x, y))
-      } else {
-        finImage.Set(x, y, base.At(x, y))
-      }
+    // Iterate over each pixel in the base image
+    for y := 0; y < baseHeight; y++ {
+        for x := 0; x < baseWidth; x++ {
+            // Check if the current pixel is within the specified region
+            if x >= x1 && x <= x2 && y >= y1 && y <= y2 {
+                // If within the region, get the corresponding pixel from the img image
+                finImage.Set(x, y, img.At(x-x1, y-y1))
+            } else {
+                // If outside the region, copy the pixel from the base image
+                finImage.Set(x, y, base.At(x, y))
+            }
+        }
     }
-  }
-  return finImage
+
+    return finImage
 }
