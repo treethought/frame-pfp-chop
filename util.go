@@ -14,8 +14,10 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/andybons/gogif"
@@ -90,7 +92,7 @@ func fetchImage(url string) (image.Image, string, error) {
 func loadImage(filepath string) (image.Image, string, error) {
 	imgFile, err := os.Open(filepath)
 	if err != nil {
-		panic(err)
+		return nil, "", err
 	}
 	defer imgFile.Close()
 	img, format, err := image.Decode(imgFile)
@@ -371,4 +373,40 @@ func hashImage(img image.Image) string {
 	imgBytes := buf.Bytes()
 	h := sha256.Sum256(imgBytes)
 	return fmt.Sprintf("%x", h)
+}
+
+func escapeURL(urlString string) string {
+	u, err := url.Parse(urlString)
+	if err != nil {
+		fmt.Println("Error parsing URL:", err)
+		return ""
+	}
+
+	// Get the path component of the URL
+	path := u.Path
+
+	// Replace characters in the path that are not allowed in a file name
+	path = strings.ReplaceAll(path, "/", "_")
+	path = strings.ReplaceAll(path, ":", "_")
+	path = strings.ReplaceAll(path, "*", "_")
+	path = strings.ReplaceAll(path, "?", "_")
+	path = strings.ReplaceAll(path, "<", "_")
+	path = strings.ReplaceAll(path, ">", "_")
+	path = strings.ReplaceAll(path, "|", "_")
+
+	return path
+}
+
+func unescapeFileName(escapedFileName string) string {
+	// Replace underscores with the original characters
+	path := strings.ReplaceAll(escapedFileName, "_", "/")
+
+	// Unescape other special characters
+	unescapedPath, err := url.PathUnescape(path)
+	if err != nil {
+		fmt.Println("Error unescaping path:", err)
+		return ""
+	}
+
+	return unescapedPath
 }

@@ -16,116 +16,16 @@ import (
 const API_URL = "https://hub-api.neynar.com"
 
 // genertae rand uint in range 1-5000
-var fid uint64 = uint64(rand.Intn(5000) + 1)
 
-// var fid uint64 = 68
+var (
+	API_KEY        = os.Getenv("API_KEY")
+	fid     uint64 = uint64(rand.Intn(5000) + 1)
 
-// const fid = 678
-
-var API_KEY = os.Getenv("API_KEY")
-
-// action enum using iota
-// with values post, post_redirect, get
-// and get_redirect
-
-type Action int
-
-const (
-	ActionPOST Action = iota
-	ActionPOSTRedirect
-	ActionMint
-	ActionLink
+	cacheDir = "tmp/framecache"
 )
 
-func (a Action) String() string {
-	switch a {
-	case ActionPOST:
-		return "post"
-	case ActionPOSTRedirect:
-		return "post_redirect"
-	case ActionMint:
-		return "mint"
-	case ActionLink:
-		return "link"
-	}
-	return "unknown"
-}
-
-type UntrustedData struct {
-	FID         uint64 `json:"fid"`
-	URL         string `json:"url"`
-	MessageHash string `json:"messageHash"`
-	Timestamp   uint64 `json:"timestamp,uint64"`
-	Network     int    `json:"network"`
-	ButtonIndex int    `json:"buttonIndex"`
-	InputText   string `json:"inputText"`
-	CastId      struct {
-		FID  uint64 `json:"fid"`
-		Hash string `json:"hash"`
-	} `json:"castId"`
-}
-
-type SignaturePacket struct {
-	UntrustedData UntrustedData `json:"untrustedData"`
-	TrustedData   struct {
-		MessageBytes string `json:"messageBytes"`
-	}
-}
-
-type Button struct {
-	Label  []byte
-	Action Action
-	Target []byte
-}
-
-type Frame struct {
-	frameV         string
-	Image          string
-	PostURL        string
-	Buttons        []Button
-	InputTextLabel string
-}
-
-func (f *Frame) Render(w io.Writer) {
-
-	btns := ""
-	for idx, b := range f.Buttons {
-		i := idx + 1
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d" content="%s">\n`, i, b.Label)
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:action" content="%s">\n`, i, b.Action.String())
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:target" content="%s">\n`, i, b.Target)
-	}
-
-	inputTx := ""
-	if f.InputTextLabel != "" {
-		inputTx = fmt.Sprintf(`<meta property="fc:frame:input:text" content="%s">\n`, f.InputTextLabel)
-	}
-
-	// TODO aspect ratio
-
-	resp := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-  <title>Frame</title>
-  <meta property="og:image" content="%s">
-  <meta property="fc:frame" content="%s">
-  <meta property="fc:frame:image" content="%s">
-  <meta property="fc:frame:post_url" content="%s">
-  %s
-  %s
-</head>
-  <body>
-    HOWDY
-  </body>
-</html>`, f.Image, f.frameV, f.Image, f.PostURL, btns, inputTx)
-	if _, err := w.Write([]byte(resp)); err != nil {
-		panic(err)
-	}
-
-	// fmt.Println(resp)
-}
-
 func main() {
+	os.MkdirAll(cacheDir, 0755)
 
 	start := Frame{
 		frameV:  "vNext",
@@ -164,15 +64,29 @@ func main() {
 	})
 	mux.HandleFunc("/start", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("start request received")
-		PfpUrl, err := getUserPFP(fid)
+		pfpUrl, err := getUserPFP(fid)
 		if err != nil {
 			log.Println("failed to get pfp: ", err)
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+
+		// get image from pfp url
+		img, _, err := fetchImage(pfpUrl)
+		if err != nil {
+			log.Println("failed to fetch image: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		// escape the pfp url to use as a file name
+
+		cachePath := fmt.Sprintf("%s/%s", cacheDir, escapeURL(pfpUrl))
+		writeImage(cachePath, img)
+
 		frame := Frame{
 			frameV:  "vNext",
-			Image:   PfpUrl,
+			Image:   pfpUrl,
 			PostURL: "https://frame.seaborne.cloud/generate",
 			Buttons: []Button{
 				Button{
@@ -234,14 +148,20 @@ func main() {
 			}
 			log.Println("pfp url: ", PfpUrl)
 
-			// get image from pfp url
-			img, _, err = fetchImage(PfpUrl)
+			cachePath := fmt.Sprintf("%s/%s.png", cacheDir, escapeURL(PfpUrl))
+
+			img, _, err = loadImage(cachePath)
 			if err != nil {
-				log.Println("failed to fetch image: ", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
+
+				// get image from pfp url
+				img, _, err = fetchImage(PfpUrl)
+				if err != nil {
+					log.Println("failed to fetch image: ", err)
+					w.WriteHeader(http.StatusInternalServerError)
+					return
+				}
+				log.Println("fetched image")
 			}
-			log.Println("fetched image")
 		}
 
 		outDir := fmt.Sprintf("results/%d", fid)
