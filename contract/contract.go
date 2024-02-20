@@ -79,8 +79,7 @@ func (c *Contract) Mint(ctx context.Context, img image.Image, user *fc.User) (*t
 	}
 	log.Println("CID: ", cid)
 
-	// imgUrl := fmt.Sprintf("ipfs://%s", cid)
-	imgUrl := fmt.Sprintf("%s%s", TW_GATEWAY, cid)
+	imgUrl := fmt.Sprintf("ipfs://%s", cid)
 
 	md := &thirdweb.EditionMetadataInput{
 		Supply: 1,
