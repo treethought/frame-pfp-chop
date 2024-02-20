@@ -92,7 +92,7 @@ func (f *Frame) Render(w io.Writer) {
   %s
 </head>
   <body>
-    HOWDY
+    greetings
   </body>
 </html>`, f.Image, f.FrameV, f.Image, f.PostURL, btns, inputTx)
 	if _, err := w.Write([]byte(resp)); err != nil {

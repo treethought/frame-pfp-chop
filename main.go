@@ -1,22 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 
 	"github.com/google/uuid"
+	"github.com/treethought/impression-frame/contract"
 	fc "github.com/treethought/impression-frame/farcaster"
 	"github.com/treethought/impression-frame/gen"
 	"github.com/treethought/impression-frame/util"
 )
 
 var (
-	fid uint64 = uint64(rand.Intn(5000) + 1)
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 	mux.HandleFunc("/generate", handleGenerate)
 
 	log.Println("starting server on port 8080")
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	if err := http.ListenAndServe("0.0.0.0:8080", mux); err != nil {
 		panic(err)
 	}
 
@@ -57,12 +57,20 @@ func serveImage(w http.ResponseWriter, r *http.Request) {
 
 func handleStart(w http.ResponseWriter, r *http.Request) {
 	log.Println("start request received")
-	pfpUrl, err := fc.GetUserPFP(fid)
+	packet, err := getSignaturePacket(r)
+	if err != nil {
+		log.Println("failed to get signature packet: ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	fid := packet.UntrustedData.FID
+	user, err := fc.GetUser(fid)
 	if err != nil {
 		log.Println("failed to get pfp: ", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+	pfpUrl := user.PfpUrl
 
 	// get image from pfp url to cache
 	_, err = fc.GetOrLoadPFP(fid)
@@ -94,18 +102,16 @@ func handleStart(w http.ResponseWriter, r *http.Request) {
 	frame.Render(w)
 }
 
-func handleGenerate(w http.ResponseWriter, r *http.Request) {
-
+func getSignaturePacket(r *http.Request) (fc.SignaturePacket, error) {
 	var packet fc.SignaturePacket
 	if err := json.NewDecoder(r.Body).Decode(&packet); err != nil {
 		log.Println("failed to decode packet: ", err)
-		w.WriteHeader(http.StatusBadRequest)
-		return
+		return packet, err
 	}
+	return packet, nil
+}
 
-	if fid == 0 {
-		fid = packet.UntrustedData.FID
-	}
+func getSessionImg(r *http.Request, packet fc.SignaturePacket, fid uint64) (image.Image, error) {
 
 	var img image.Image
 	var err error
@@ -113,19 +119,34 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" && r.URL.Query().Get("session") != "" {
 		id := r.URL.Query().Get("session")
 		path := fmt.Sprintf("results/%d/%s.png", fid, id)
-		// read image from file
 		log.Println("continue session")
 		img, _, err = util.LoadImage(path)
 		if err != nil {
 			log.Println("failed to read image: ", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
+			return nil, err
 		}
 	} else {
 		img, err = fc.GetOrLoadPFP(fid)
 	}
+	return img, err
 
-	outDir := fmt.Sprintf("results/%d", fid)
+}
+
+func handleGenerate(w http.ResponseWriter, r *http.Request) {
+	packet, err := getSignaturePacket(r)
+	if err != nil {
+		log.Println("failed to get signature packet: ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	img, err := getSessionImg(r, packet, packet.UntrustedData.FID)
+	if err != nil {
+		log.Println("failed to get session image: ", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	outDir := fmt.Sprintf("results/%d", packet.UntrustedData.FID)
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		log.Println("failed to create output dir: ", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -139,14 +160,22 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 		result = runShuffle(img, outDir)
 	case 3:
 		og := img
-		if url := fc.Cache.GetPfpUrl(fid); url != "" {
-			cached, err := fc.GetOrLoadPFP(fid)
+		if url := fc.Cache.GetPfpUrl(packet.UntrustedData.FID); url != "" {
+			cached, err := fc.GetOrLoadPFP(packet.UntrustedData.FID)
 			if err == nil {
 				og = cached
 			}
 		}
-
 		result = runRecombine(img, og, outDir)
+	case 4:
+		frame, err := handleMint(r.Context(), packet, img)
+		if err != nil {
+			log.Println("failed to mint: ", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		frame.Render(w)
+		return
 	default:
 		result = runTransform(img, outDir)
 	}
@@ -178,13 +207,53 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 				Action: fc.ActionPOST,
 			},
 			{
-				Label:  []byte("Fractal"),
+				Label:  []byte("Mint"),
 				Action: fc.ActionPOST,
+				Target: []byte("https://frame.seaborne.cloud/mint"),
 			},
 		},
 	}
 
 	frame.Render(w)
+
+}
+
+func handleMint(ctx context.Context, packet fc.SignaturePacket, img image.Image) (*fc.Frame, error) {
+	user, err := fc.GetUser(packet.UntrustedData.FID)
+	if err != nil {
+		log.Println("failed to get user: ", err)
+		return nil, err
+	}
+	c, err := contract.NewContract()
+	if err != nil {
+		log.Println("failed to create contract: ", err)
+		return nil, err
+	}
+
+	tx, err := c.Mint(ctx, img, user)
+	if err != nil {
+		log.Println("failed to mint: ", err)
+		return nil, err
+	}
+	result, _ := json.Marshal(&tx)
+	fmt.Println(string(result))
+
+	explorerUrl := fmt.Sprintf("https://sepolia.explorer.zora.energy/tx/%s", tx.Hash().Hex())
+
+	frame := &fc.Frame{
+		FrameV:  "vNext",
+		Image:   "http://localhost:8080/images/cover.png",
+		PostURL: "https://frame.seaborne.cloud/start",
+		Buttons: []fc.Button{
+			{
+				Label:  []byte("View"),
+				Action: fc.ActionLink,
+				Target: []byte(explorerUrl),
+			},
+		},
+	}
+
+	return frame, nil
 
 }
 

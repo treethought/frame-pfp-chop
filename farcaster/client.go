@@ -11,15 +11,16 @@ import (
 	"github.com/treethought/impression-frame/util"
 )
 
-var API_KEY = os.Getenv("API_KEY")
+var NEYNAR_API_KEY = os.Getenv("API_KEY")
 
 const API_URL = "https://hub-api.neynar.com"
 
 type User struct {
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	PfpUrl      string `json:"pfp_url"`
-	Profile     struct {
+	Username     string   `json:"username"`
+	DisplayName  string   `json:"display_name"`
+	PfpUrl       string   `json:"pfp_url"`
+	Verfications []string `json:"verifications"`
+	Profile      struct {
 		Bio struct {
 			Text string `json:"text"`
 		} `json:"bio"`
@@ -36,28 +37,28 @@ type SearchResult struct {
 	}
 }
 
-func GetUserPFPByName(name string, viewer uint64) (string, error) {
+func GetUserName(name string, viewer uint64) (*User, error) {
 	url := fmt.Sprintf("https://api.neynar.com/v2/farcaster/user/search?q=%s&viewer_fid=%d", name, viewer)
 	fmt.Println(url)
 
 	req, _ := http.NewRequest("GET", url, nil)
 
 	req.Header.Add("accept", "application/json")
-	req.Header.Add("api_key", API_KEY)
+	req.Header.Add("api_key", NEYNAR_API_KEY)
 
 	res, _ := http.DefaultClient.Do(req)
 
 	var resp SearchResult
 	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(resp.Result.Users) == 0 {
-		return "", fmt.Errorf("no users found")
+		return nil, fmt.Errorf("no users found")
 	}
-	return resp.Result.Users[0].PfpUrl, nil
+	return &resp.Result.Users[0], nil
 }
 
-func GetUserPFP(fid uint64) (string, error) {
+func GetUser(fid uint64) (*User, error) {
 
 	url := fmt.Sprintf("https://api.neynar.com/v2/farcaster/user/bulk?fids=%d", fid)
 	fmt.Println(url)
@@ -65,7 +66,7 @@ func GetUserPFP(fid uint64) (string, error) {
 	req, _ := http.NewRequest("GET", url, nil)
 
 	req.Header.Add("accept", "application/json")
-	req.Header.Add("api_key", API_KEY)
+	req.Header.Add("api_key", NEYNAR_API_KEY)
 
 	res, _ := http.DefaultClient.Do(req)
 
@@ -74,13 +75,13 @@ func GetUserPFP(fid uint64) (string, error) {
 
 	var resp Users
 	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return "", err
+		return nil, err
 	}
 	if len(resp.Users) == 0 {
-		return "", fmt.Errorf("no users found")
+		return nil, fmt.Errorf("no users found")
 	}
 	fmt.Println(resp.Users[0].PfpUrl)
-	return resp.Users[0].PfpUrl, nil
+	return &resp.Users[0], nil
 
 }
 
@@ -102,24 +103,25 @@ func GetOrLoadPFP(fid uint64) (image.Image, error) {
 	}
 
 	log.Println("fetching pfp for fid: ", fid)
-	PfpUrl, err := GetUserPFP(fid)
+	user, err := GetUser(fid)
 	if err != nil {
 		log.Println("failed to get pfp: ", err)
 		return nil, err
 	}
-	log.Println("pfp url: ", PfpUrl)
-	Cache.SetPfpUrl(fid, PfpUrl)
+	pfpUrl := user.PfpUrl
+	log.Println("pfp url: ", pfpUrl)
+	Cache.SetPfpUrl(fid, pfpUrl)
 
-	cachePath := fmt.Sprintf("%s/%s.png", cacheDir, util.EscapeURL(PfpUrl))
+	cachePath := fmt.Sprintf("%s/%s.png", cacheDir, util.EscapeURL(pfpUrl))
 	img, _, err := util.LoadImage(cachePath)
 	if err != nil {
 
-		img, _, err = util.FetchImage(PfpUrl)
+		img, _, err = util.FetchImage(pfpUrl)
 		if err != nil {
 			log.Println("failed to fetch image: ", err)
 			return nil, err
 		}
-		cachePath := fmt.Sprintf("%s/%s.png", cacheDir, util.EscapeURL(PfpUrl))
+		cachePath := fmt.Sprintf("%s/%s.png", cacheDir, util.EscapeURL(pfpUrl))
 		util.WriteImage(cachePath, img)
 	}
 	return img, nil
