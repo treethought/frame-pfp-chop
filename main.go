@@ -17,6 +17,7 @@ import (
 )
 
 var (
+	BASE_URL = os.Getenv("BASE_URL")
 )
 
 func main() {
@@ -38,8 +39,8 @@ func main() {
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	start := fc.Frame{
 		FrameV:  "vNext",
-		Image:   "http://localhost:8080/images/cover.png",
-		PostURL: "https://frame.seaborne.cloud/start",
+		Image:   fmt.Sprintf("%s/images/cover.png", BASE_URL),
+		PostURL: fmt.Sprintf("%s/start", BASE_URL),
 		Buttons: []fc.Button{
 			{
 				Label:  []byte("Start"),
@@ -185,9 +186,9 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 	util.WriteImage(out, result)
 	log.Println("wrote image to: ", out)
 
-	imgUrl := fmt.Sprintf("https://frame.seaborne.cloud/%s", out)
+	imgUrl := fmt.Sprintf("%s/%s", BASE_URL, out)
 
-	postURL := fmt.Sprintf("https://frame.seaborne.cloud/generate?session=%s", id)
+	postURL := fmt.Sprintf("%s/generate?session=%s", BASE_URL, id)
 
 	frame := fc.Frame{
 		FrameV:  "vNext",
@@ -209,7 +210,7 @@ func handleGenerate(w http.ResponseWriter, r *http.Request) {
 			{
 				Label:  []byte("Mint"),
 				Action: fc.ActionPOST,
-				Target: []byte("https://frame.seaborne.cloud/mint"),
+				Target: []byte(fmt.Sprintf("%s/mint", BASE_URL)),
 			},
 		},
 	}
@@ -242,8 +243,8 @@ func handleMint(ctx context.Context, packet fc.SignaturePacket, img image.Image)
 
 	frame := &fc.Frame{
 		FrameV:  "vNext",
-		Image:   "http://localhost:8080/images/cover.png",
-		PostURL: "https://frame.seaborne.cloud/start",
+		Image:   fmt.Sprintf("%s/images/cover.png", BASE_URL),
+		PostURL: fmt.Sprintf("%s/start", BASE_URL),
 		Buttons: []fc.Button{
 			{
 				Label:  []byte("View"),

@@ -68,9 +68,9 @@ func (f *Frame) Render(w io.Writer) {
 	btns := ""
 	for idx, b := range f.Buttons {
 		i := idx + 1
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d" content="%s">\n`, i, b.Label)
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:action" content="%s">\n`, i, b.Action.String())
-		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:target" content="%s">\n`, i, b.Target)
+		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d" content="%s"><br/>`, i, b.Label)
+		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:action" content="%s"><br/>`, i, b.Action.String())
+		btns += fmt.Sprintf(`<meta property="fc:frame:button:%d:target" content="%s"><br/>`, i, b.Target)
 	}
 
 	inputTx := ""
